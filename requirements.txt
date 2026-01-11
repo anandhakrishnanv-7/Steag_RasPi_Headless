@@ -1,0 +1,15 @@
+numpy==1.26.4
+opencv-python==4.10.0.84
+pyserial==3.5
+pynmea2==1.19.0
+RPi.GPIO==0.7.1
+mpu9250-jmdev==1.0.13
+Flask==3.1.0
+flask-socketio==5.4.1
+flask-cors==5.0.0
+requests==2.32.3
+python-socketio==5.11.4
+python-engineio==4.9.1
+gevent==24.2.1
+gevent-websocket==0.10.1
+python-dateutil==2.9.0

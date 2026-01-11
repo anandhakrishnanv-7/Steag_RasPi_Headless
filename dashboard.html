@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Coal Field Hotspot Monitoring Dashboard</title>
+    
+    <!-- Leaflet CSS for OpenStreetMap -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <!-- Socket.IO -->
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <!-- Chart.js for graphs -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 1rem 2rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+
+        .header h1 {
+            font-size: 1.8rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .status-bar {
+            display: flex;
+            gap: 2rem;
+            font-size: 0.9rem;
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .status-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #4ade80;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .nav-tabs {
+            background: #16213e;
+            display: flex;
+            padding: 0 2rem;
+            border-bottom: 2px solid #0f3460;
+        }
+
+        .nav-tab {
+            padding: 1rem 2rem;
+            cursor: pointer;
+            border: none;
+            background: transparent;
+            color: #aaa;
+            font-size: 1rem;
+            transition: all 0.3s;
+            border-bottom: 3px solid transparent;
+        }
+
+        .nav-tab:hover {
+            color: #fff;
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .nav-tab.active {
+            color: #fff;
+            border-bottom-color: #667eea;
+        }
+
+        .content {
+            padding: 2rem;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .grid {
+            display: grid;
+            gap: 1.5rem;
+        }
+
+        .grid-2 {
+            grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+        }
+
+        .card {
+            background: #16213e;
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+
+        .card-title {
+            font-size: 1.2rem;
+            margin-bottom: 1rem;
+            color: #667eea;
+        }
+
+        #map {
+            height: 600px;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        #video-feed {
+            width: 100%;
+            height: auto;
+            border-radius: 8px;
+            background: #000;
+        }
+
+        .alert-list {
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        .alert-item {
+            background: rgba(239, 68, 68, 0.1);
+            border-left: 4px solid #ef4444;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .alert-item:hover {
+            background: rgba(239, 68, 68, 0.2);
+            transform: translateX(5px);
+        }
+
+        .alert-item.new {
+            animation: slideIn 0.5s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .alert-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 0.5rem;
+        }
+
+        .alert-temp {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #ef4444;
+        }
+
+        .alert-time {
+            color: #aaa;
+            font-size: 0.85rem;
+        }
+
+        .alert-location {
+            color: #94a3b8;
+            font-size: 0.9rem;
+        }
+
+        .image-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 1rem;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+
+        .image-item {
+            position: relative;
+            cursor: pointer;
+            border-radius: 8px;
+            overflow: hidden;
+            transition: transform 0.3s;
+        }
+
+        .image-item:hover {
+            transform: scale(1.05);
+        }
+
+        .image-item img {
+            width: 100%;
+            height: 150px;
+            object-fit: cover;
+        }
+
+        .image-caption {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 0.5rem;
+            font-size: 0.75rem;
+        }
+
+        .sensor-data {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+
+        .sensor-value {
+            background: rgba(102, 126, 234, 0.1);
+            padding: 1rem;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .sensor-label {
+            color: #aaa;
+            font-size: 0.85rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .sensor-number {
+            font-size: 1.8rem;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .sensor-unit {
+            font-size: 0.9rem;
+            color: #94a3b8;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.9);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            max-width: 90%;
+            max-height: 90%;
+        }
+
+        .modal-close {
+            position: absolute;
+            top: 2rem;
+            right: 2rem;
+            font-size: 2rem;
+            color: #fff;
+            cursor: pointer;
+            background: none;
+            border: none;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 1.5rem;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-label {
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #0f3460;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #667eea;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🔥 Coal Field Hotspot Monitoring System</h1>
+        <div class="status-bar">
+            <div class="status-item">
+                <div class="status-indicator" id="connection-status"></div>
+                <span>Connected</span>
+            </div>
+            <div class="status-item">
+                <span id="gps-status">GPS: Acquiring...</span>
+            </div>
+            <div class="status-item">
+                <span id="alert-count">Alerts: 0</span>
+            </div>
+            <div class="status-item">
+                <span id="uptime">Uptime: --:--:--</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="nav-tabs">
+        <button class="nav-tab active" data-tab="overview">Overview</button>
+        <button class="nav-tab" data-tab="map">Live Map</button>
+        <button class="nav-tab" data-tab="video">Live Stream</button>
+        <button class="nav-tab" data-tab="images">Thermal Images</button>
+        <button class="nav-tab" data-tab="alerts">Alerts</button>
+        <button class="nav-tab" data-tab="sensors">Sensor Data</button>
+    </div>
+
+    <div class="content">
+        <!-- Overview Tab -->
+        <div class="tab-content active" id="overview">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-alerts">0</div>
+                    <div class="stat-label">Total Alerts</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-max-temp">--°C</div>
+                    <div class="stat-label">Max Temperature</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-gps-points">0</div>
+                    <div class="stat-label">GPS Points</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-coverage">-- km</div>
+                    <div class="stat-label">Distance Covered</div>
+                </div>
+            </div>
+
+            <div class="grid grid-2">
+                <div class="card">
+                    <h3 class="card-title">Recent Alerts</h3>
+                    <div class="alert-list" id="overview-alerts">
+                        <p style="color: #aaa; text-align: center;">No alerts yet</p>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3 class="card-title">Live Temperature</h3>
+                    <canvas id="temp-chart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Map Tab -->
+        <div class="tab-content" id="map-tab">
+            <div class="card">
+                <h3 class="card-title">Hotspot Locations & GPS Track</h3>
+                <div id="map"></div>
+            </div>
+        </div>
+
+        <!-- Video Tab -->
+        <div class="tab-content" id="video-tab">
+            <div class="grid grid-2">
+                <div class="card">
+                    <h3 class="card-title">Live Thermal Feed (240p)</h3>
+                    <img id="video-feed" src="/video/feed" alt="Loading video...">
+                </div>
+                <div class="card">
+                    <h3 class="card-title">Latest Alert Image</h3>
+                    <img id="latest-alert-img" style="width: 100%; border-radius: 8px;" alt="No alerts yet">
+                </div>
+            </div>
+        </div>
+
+        <!-- Images Tab -->
+        <div class="tab-content" id="images-tab">
+            <div class="card">
+                <h3 class="card-title">Thermal Image Gallery</h3>
+                <div class="image-grid" id="image-gallery"></div>
+            </div>
+        </div>
+
+        <!-- Alerts Tab -->
+        <div class="tab-content" id="alerts-tab">
+            <div class="card">
+                <h3 class="card-title">All Alerts</h3>
+                <div class="alert-list" id="all-alerts"></div>
+            </div>
+        </div>
+
+        <!-- Sensors Tab -->
+        <div class="tab-content" id="sensors-tab">
+            <div class="card">
+                <h3 class="card-title">Current Sensor Readings</h3>
+                <div class="sensor-data" id="sensor-readings"></div>
+            </div>
+            
+            <div class="card" style="margin-top: 1.5rem;">
+                <h3 class="card-title">Sensor History</h3>
+                <canvas id="sensor-chart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Image Modal -->
+    <div class="modal" id="image-modal">
+        <button class="modal-close" onclick="closeModal()">&times;</button>
+        <img class="modal-content" id="modal-image">
+    </div>
+
+    <script>
+        // Initialize Socket.IO connection
+        const socket = io();
+        
+        // Global variables
+        let map, gpsTrack, alertMarkers = [];
+        let alerts = [];
+        let gpsPoints = [];
+        let tempChart, sensorChart;
+
+        // Tab switching
+        document.querySelectorAll('.nav-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                const tabName = tab.dataset.tab;
+                
+                // Update active tab
+                document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                
+                tab.classList.add('active');
+                document.getElementById(tabName === 'map' ? 'map-tab' : 
+                                       tabName === 'video' ? 'video-tab' :
+                                       tabName === 'images' ? 'images-tab' :
+                                       tabName === 'alerts' ? 'alerts-tab' :
+                                       tabName === 'sensors' ? 'sensors-tab' : 
+                                       'overview').classList.add('active');
+                
+                // Initialize map when tab is opened
+                if (tabName === 'map' && !map) {
+                    initMap();
+                }
+            });
+        });
+
+        // Initialize OpenStreetMap
+        function initMap() {
+            map = L.map('map').setView([10.0, 76.0], 13); // Default to Kerala coordinates
+            
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors',
+                maxZoom: 19
+            }).addTo(map);
+            
+            gpsTrack = L.polyline([], {color: '#3b82f6', weight: 3}).addTo(map);
+            
+            // Load existing data
+            loadGPSTrack();
+            loadAlertMarkers();
+        }
+
+        // Load GPS track
+        async function loadGPSTrack() {
+            try {
+                const response = await fetch('/api/gps/track');
+                gpsPoints = await response.json();
+                
+                if (gpsPoints.length > 0) {
+                    const coords = gpsPoints
+                        .filter(p => p.lat && p.lon)
+                        .map(p => [p.lat, p.lon]);
+                    
+                    if (coords.length > 0) {
+                        gpsTrack.setLatLngs(coords);
+                        map.fitBounds(gpsTrack.getBounds());
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading GPS track:', error);
+            }
+        }
+
+        // Load alert markers
+        async function loadAlertMarkers() {
+            try {
+                const response = await fetch('/api/alerts');
+                alerts = await response.json();
+                
+                updateAlertMarkers();
+                updateAlertList();
+                updateStats();
+            } catch (error) {
+                console.error('Error loading alerts:', error);
+            }
+        }
+
+        // Update alert markers on map
+        function updateAlertMarkers() {
+            if (!map) return;
+            
+            // Clear existing markers
+            alertMarkers.forEach(marker => map.removeLayer(marker));
+            alertMarkers = [];
+            
+            // Add new markers
+            alerts.forEach(alert => {
+                if (alert.gps && alert.gps.lat && alert.gps.lon) {
+                    const marker = L.marker([alert.gps.lat, alert.gps.lon], {
+                        icon: L.divIcon({
+                            className: 'custom-icon',
+                            html: '🔥',
+                            iconSize: [30, 30]
+                        })
+                    }).addTo(map);
+                    
+                    marker.bindPopup(`
+                        <strong>HOTSPOT ALERT</strong><br>
+                        Temperature: ${alert.thermal.max_temp}°C<br>
+                        Time: ${new Date(alert.timestamp).toLocaleString()}<br>
+                        Location: ${alert.gps.lat.toFixed(6)}, ${alert.gps.lon.toFixed(6)}
+                    `);
+                    
+                    alertMarkers.push(marker);
+                }
+            });
+        }
+
+        // Update alert list
+        function updateAlertList() {
+            const overviewList = document.getElementById('overview-alerts');
+            const allList = document.getElementById('all-alerts');
+            
+            if (alerts.length === 0) {
+                const noAlerts = '<p style="color: #aaa; text-align: center;">No alerts yet</p>';
+                overviewList.innerHTML = noAlerts;
+                allList.innerHTML = noAlerts;
+                return;
+            }
+            
+            const alertHTML = alerts.map(alert => `
+                <div class="alert-item" onclick="showAlertOnMap(${alert.gps.lat}, ${alert.gps.lon})">
+                    <div class="alert-header">
+                        <div class="alert-temp">${alert.thermal.max_temp}°C</div>
+                        <div class="alert-time">${new Date(alert.timestamp).toLocaleString()}</div>
+                    </div>
+                    <div class="alert-location">
+                        📍 ${alert.gps.lat.toFixed(6)}, ${alert.gps.lon.toFixed(6)}
+                    </div>
+                    <div style="margin-top: 0.5rem; font-size: 0.85rem;">
+                        Hotspots detected: ${alert.thermal.hotspots.length}
+                    </div>
+                </div>
+            `).join('');
+            
+            overviewList.innerHTML = alertHTML;
+            allList.innerHTML = alertHTML;
+        }
+
+        // Show alert on map
+        function showAlertOnMap(lat, lon) {
+            const mapTab = document.querySelector('[data-tab="map"]');
+            mapTab.click();
+            
+            setTimeout(() => {
+                if (map) {
+                    map.setView([lat, lon], 18);
+                }
+            }, 100);
+        }
+
+        // Update statistics
+        function updateStats() {
+            document.getElementById('stat-alerts').textContent = alerts.length;
+            document.getElementById('alert-count').textContent = `Alerts: ${alerts.length}`;
+            
+            if (alerts.length > 0) {
+                const maxTemp = Math.max(...alerts.map(a => a.thermal.max_temp));
+                document.getElementById('stat-max-temp').textContent = `${maxTemp}°C`;
+            }
+            
+            document.getElementById('stat-gps-points').textContent = gpsPoints.length;
+            
+            // Calculate distance
+            if (gpsPoints.length > 1) {
+                let distance = 0;
+                for (let i = 1; i < gpsPoints.length; i++) {
+                    distance += calculateDistance(
+                        gpsPoints[i-1].lat, gpsPoints[i-1].lon,
+                        gpsPoints[i].lat, gpsPoints[i].lon
+                    );
+                }
+                document.getElementById('stat-coverage').textContent = `${distance.toFixed(2)} km`;
+            }
+        }
+
+        // Calculate distance between two GPS points
+        function calculateDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371; // Earth's radius in km
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                     Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                     Math.sin(dLon/2) * Math.sin(dLon/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return R * c;
+        }
+
+        // Load thermal images
+        async function loadThermalImages() {
+            try {
+                const response = await fetch('/api/images/thermal?limit=50');
+                const images = await response.json();
+                
+                const gallery = document.getElementById('image-gallery');
+                gallery.innerHTML = images.map(img => `
+                    <div class="image-item" onclick="showImage('${img.path}')">
+                        <img src="${img.path}" alt="${img.filename}">
+                        <div class="image-caption">${new Date(img.timestamp).toLocaleString()}</div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('Error loading images:', error);
+            }
+        }
+
+        // Show image in modal
+        function showImage(path) {
+            document.getElementById('modal-image').src = path;
+            document.getElementById('image-modal').classList.add('active');
+        }
+
+        // Close modal
+        function closeModal() {
+            document.getElementById('image-modal').classList.remove('active');
+        }
+
+        // Initialize temperature chart
+        function initTempChart() {
+            const ctx = document.getElementById('temp-chart').getContext('2d');
+            tempChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Max Temperature (°C)',
+                        data: [],
+                        borderColor: '#ef4444',
+                        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    scales: {
+                        y: { beginAtZero: false }
+                    },
+                    plugins: {
+                        legend: { labels: { color: '#eee' } }
+                    }
+                }
+            });
+        }
+
+        // Socket.IO event handlers
+        socket.on('connect', () => {
+            console.log('Connected to server');
+            document.getElementById('connection-status').style.background = '#4ade80';
+        });
+
+        socket.on('disconnect', () => {
+            console.log('Disconnected from server');
+            document.getElementById('connection-status').style.background = '#ef4444';
+        });
+
+        socket.on('new_alert', (alert) => {
+            alerts.unshift(alert);
+            if (alerts.length > 100) alerts.pop();
+            
+            updateAlertMarkers();
+            updateAlertList();
+            updateStats();
+            
+            // Update latest alert image
+            if (alert.image_path) {
+                document.getElementById('latest-alert-img').src = alert.image_path;
+            }
+            
+            // Show notification
+            if (Notification.permission === 'granted') {
+                new Notification('🔥 Hotspot Alert!', {
+                    body: `Temperature: ${alert.thermal.max_temp}°C at ${alert.gps.lat.toFixed(6)}, ${alert.gps.lon.toFixed(6)}`,
+                    icon: '/static/alert-icon.png'
+                });
+            }
+        });
+
+        socket.on('gps_update', (gps) => {
+            if (gps.lat && gps.lon && gps.status === 'A') {
+                gpsPoints.push(gps);
+                if (gpsPoints.length > 500) gpsPoints.shift();
+                
+                if (map) {
+                    const coords = gpsPoints.map(p => [p.lat, p.lon]);
+                    gpsTrack.setLatLngs(coords);
+                }
+                
+                document.getElementById('gps-status').textContent = 
+                    `GPS: ${gps.lat.toFixed(6)}, ${gps.lon.toFixed(6)}`;
+            } else {
+                document.getElementById('gps-status').textContent = 'GPS: Acquiring...';
+            }
+        });
+
+        // Initialize on page load
+        window.addEventListener('load', () => {
+            initTempChart();
+            loadAlertMarkers();
+            loadThermalImages();
+            
+            // Request notification permission
+            if ('Notification' in window) {
+                Notification.requestPermission();
+            }
+            
+            // Refresh images every 30 seconds
+            setInterval(loadThermalImages, 30000);
+            
+            // Update stats every 5 seconds
+            setInterval(() => {
+                fetch('/api/stats')
+                    .then(r => r.json())
+                    .then(stats => {
+                        document.getElementById('uptime').textContent = `Uptime: ${stats.system_uptime}`;
+                    });
+            }, 5000);
+        });
+    </script>
+</body>
+</html>
