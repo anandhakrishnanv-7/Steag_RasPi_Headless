@@ -135,6 +135,7 @@ class RadiometricThermalCamera:
         self.cap = None
         self.latest_frame = None
         self.latest_temps = {'max': 0.0, 'avg': 0.0, 'center': 0.0}
+        self.latest_grid = None
         self.running = True
         self.width = 256
         self.height = 192
@@ -185,6 +186,7 @@ class RadiometricThermalCamera:
             hi_all = thdata[...,0].astype(np.uint16)
             raw_all = lo_all + hi_all
             temp_grid = (raw_all / 64.0) - 273.15
+            self.latest_grid = temp_grid
             
             t_max = np.max(temp_grid)
             t_avg = np.mean(temp_grid)
@@ -271,7 +273,7 @@ def sensor_loop():
     print(f"🚀 SYSTEM ACTIVE: Logging to {LOG_FILE}")
 
     alert_start_time = None
-    ALERT_DELAY = 3  # seconds persistence required
+    ALERT_DELAY = 0.1  # seconds persistence required
 
     last_log_time = 0
 
@@ -315,12 +317,27 @@ def sensor_loop():
         # --------------------------------------------------
         is_alert = False
 
-        if (max_temp >= ALERT_THRESHOLD) and (hot_ratio > 0.01):
+        # --------------------------------------------------
+        # PERSISTENT ALERT LOGIC (Time-Based Only)
+        # --------------------------------------------------
+        if max_temp >= ALERT_THRESHOLD:
             if alert_start_time is None:
+                # 1. Start the clock the exact moment it crosses the threshold
                 alert_start_time = time.time()
+                is_alert = False # Not an alert YET
+                print(f"Heat detected ({max_temp:.1f}C). Starting {ALERT_DELAY}s timer...")
+                
             elif time.time() - alert_start_time >= ALERT_DELAY:
+                # 2. It has stayed hot for the required duration! Trigger it.
                 is_alert = True
+                print("ALERT TRIGGERED!")
+            else:
+                # 3. Still waiting for the delay to finish counting up
+                is_alert = False 
         else:
+            # 4. It cooled down below the threshold. Reset the timer.
+            if alert_start_time is not None:
+                print("Cooled down, resetting timer.")
             alert_start_time = None
             is_alert = False
 
